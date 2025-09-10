@@ -13,7 +13,7 @@ const orderRouter = require("./router/order-router");
 const cartRouter = require("./router/cart-router");
 
 const corsOptions = {
-    origin: "http://localhost:3000",
+    origin: "https://mikikids.netlify.app",
     credentials: true,
 }
 
