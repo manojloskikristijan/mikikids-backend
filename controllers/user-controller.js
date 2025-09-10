@@ -9,7 +9,7 @@ const cookieOptions = {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? "None" : "Lax",
-    domain: isProduction ? ".myspotly.com" : "localhost",
+    // domain: isProduction ? ".myspotly.com" : "localhost",
     path: "/",
     maxAge: 30 * 24 * 60 * 60 * 1000,
   };
