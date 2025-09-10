@@ -13,13 +13,16 @@ const orderRouter = require("./router/order-router");
 const cartRouter = require("./router/cart-router");
 
 const corsOptions = {
-    origin: "https://mikikids.netlify.app",
+    origin: (origin, cb) => cb(null, true), 
     credentials: true,
-}
-
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  };
+  
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); 
 app.use(cookieParser());
 app.use(express.json());
-app.use(cors(corsOptions));
 
 app.use("/img", express.static("public/img"));
 
