@@ -1,6 +1,7 @@
 const Cart = require("../models/Cart");
 const Product = require("../models/Product");
 const mongoose = require("mongoose");
+const crypto = require("crypto");
 
 // Get cart (authenticated user or guest)
 const getCart = async (req, res) => {
@@ -43,63 +44,87 @@ const getCart = async (req, res) => {
 // Add item to cart (authenticated user or guest)
 const addToCart = async (req, res) => {
     try {
-        const { userId, sessionId, productId, quantity = 1, size } = req.body;
-        
-        if (!size) return res.status(400).json({ message: "Size is required" });
-        if (!userId && !sessionId) return res.status(400).json({ message: "Either userId or sessionId is required" });
-        
-        // Validate product exists and check availability
-        const product = await Product.findById(productId);
-        if (!product) return res.status(404).json({ message: "Product not found" });
-        
-        let cart;
-        if (userId) {
-            // Authenticated user cart
-            cart = await Cart.findOne({ user: userId, isGuestCart: false });
-            if (!cart) {
-                cart = await Cart.create({ user: userId, isGuestCart: false, items: [] });
-            }
-        } else {
-            // Guest cart
-            cart = await Cart.findOne({ sessionId, isGuestCart: true });
-            if (!cart) {
-                cart = await Cart.create({ sessionId, isGuestCart: true, items: [] });
-            }
+      const { userId, sessionId, productId, quantity = 1, size } = req.body;
+  
+      if (!size) {
+        return res.status(400).json({ message: "Size is required" });
+      }
+      if (!userId && !sessionId) {
+        return res.status(400).json({ message: "Either userId or sessionId is required" });
+      }
+  
+      // 1) Validate product
+      const product = await Product.findById(productId);
+      if (!product) return res.status(404).json({ message: "Product not found" });
+  
+      // 2) Locate or create cart
+      let cart;
+  
+      if (userId) {
+        // Authenticated user cart
+        cart = await Cart.findOne({ user: userId, isGuestCart: false });
+        if (!cart) {
+          cart = await Cart.create({ user: userId, isGuestCart: false, items: [] });
         }
-        
-        // Check if item already exists in cart
-        const existingItemIndex = cart.items.findIndex(item => 
-            item.product.toString() === productId && item.size === size
+      } else {
+        // Guest cart — assign a deterministic, unique placeholder ObjectId to `user`
+        // This avoids collisions with an existing unique { user: 1 } index.
+        const guestUserId = new mongoose.Types.ObjectId(
+          crypto.createHash("md5").update(sessionId).digest("hex").slice(0, 24)
         );
-        
-        const requestedQuantity = existingItemIndex > -1 
-            ? cart.items[existingItemIndex].quantity + quantity 
-            : quantity;
-        
-        // Check if requested quantity is available
-        if (!product.isAvailable(size, requestedQuantity)) {
-            const availableQuantity = product.getQuantityForSize(size);
-            return res.status(400).json({ 
-                message: `Only ${availableQuantity} items available for size ${size}` 
-            });
+  
+        cart = await Cart.findOne({ sessionId, isGuestCart: true });
+  
+        if (!cart) {
+          cart = await Cart.create({
+            sessionId,
+            isGuestCart: true,
+            user: guestUserId, // <-- key line to satisfy unique user index
+            items: [],
+          });
+        } else if (!cart.user) {
+          // Harden legacy docs that may have user: null
+          cart.user = guestUserId;
+          await cart.save();
         }
-        
-        if (existingItemIndex > -1) {
-            // Update quantity if item exists
-            cart.items[existingItemIndex].quantity = requestedQuantity;
-        } else {
-            // Add new item
-            cart.items.push({ product: productId, quantity, size });
-        }
-        
-        await cart.save();
-        await cart.populate('items.product', 'title price discount image inventory');
-        
-        res.json({ message: "Item added to cart", cart });
+      }
+  
+      // 3) Merge or add item
+      const qtyNum = Math.max(1, Number(quantity) || 1);
+  
+      const existingItemIndex = cart.items.findIndex(
+        (i) => i.product.toString() === productId && i.size === size
+      );
+  
+      const requestedQty =
+        existingItemIndex > -1
+          ? cart.items[existingItemIndex].quantity + qtyNum
+          : qtyNum;
+  
+      // 4) Check availability with the requested quantity
+      if (!product.isAvailable(size, requestedQty)) {
+        const availableQuantity = product.getQuantityForSize(size);
+        return res
+          .status(400)
+          .json({ message: `Only ${availableQuantity} items available for size ${size}` });
+      }
+  
+      if (existingItemIndex > -1) {
+        cart.items[existingItemIndex].quantity = requestedQty;
+      } else {
+        cart.items.push({ product: product._id, quantity: qtyNum, size });
+      }
+  
+      // 5) Save & populate
+      await cart.save();
+      await cart.populate("items.product", "title price discount image inventory isOnSale");
+  
+      return res.json({ message: "Item added to cart", cart });
     } catch (err) {
-        res.status(400).json({ message: err.message });
+      console.error("addToCart error:", err);
+      return res.status(400).json({ message: err.message });
     }
-};
+  };
 
 // Update cart item quantity (authenticated user or guest)
 const updateCartItem = async (req, res) => {
