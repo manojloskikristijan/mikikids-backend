@@ -153,6 +153,7 @@ class EmailService {
     async sendOrderConfirmation(orderData) {
         try {
             const { order, user } = orderData;
+            console.log(order, user);
             const recipientEmail = order.isGuestOrder ? order.guestInfo.email : user.email;
             const recipientName = order.isGuestOrder ? order.guestInfo.name : user.name;
 
