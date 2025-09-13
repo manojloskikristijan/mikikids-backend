@@ -147,6 +147,7 @@ const createOrder = async (req, res, next) => {
                     cartItems: req.orderData.cartItems // Use stored cart items with quantities
                 };
                 
+                emailService.testEmailConnection();
                 const emailResult = await emailService.sendOrderConfirmation(emailData);
                 if (emailResult.success) {
                     console.log(`Order confirmation email sent for order ${completeOrder._id}`);
