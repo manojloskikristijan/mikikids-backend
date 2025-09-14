@@ -1,5 +1,5 @@
     const nodemailer = require('nodemailer');
-
+ 
     /**
      * Format number as Macedonian denar currency
      * @param {number} amount - The amount to format
@@ -36,9 +36,7 @@
     class EmailService {
         constructor() {
             this.transporter = nodemailer.createTransport({
-                host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT || 465),   // 465 = SSL
-      secure: (process.env.SMTP_SECURE ?? 'true') === 'true',
+host: "gmail",
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS, // Gmail App Password
@@ -158,9 +156,10 @@
                 console.log(order, user);
                 const recipientEmail = order.isGuestOrder ? order.guestInfo.email : user.email;
                 const recipientName = order.isGuestOrder ? order.guestInfo.name : user.name;
+                
 
                 const mailOptions = {
-                    from:  `MikiKids`,
+                    from:  `manojloskikristijan@gmail.com`,
                     to: recipientEmail,
                     subject: `Потврда за нарачка - #${order._id.toString().slice(-8).toUpperCase()}`,
                     html: this.generateOrderConfirmationHTML(orderData),
