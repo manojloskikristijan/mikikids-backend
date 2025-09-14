@@ -36,11 +36,13 @@
     class EmailService {
         constructor() {
             this.transporter = nodemailer.createTransport({
-                service: 'gmail', // You can change this to other services like 'outlook', 'yahoo', etc.
-                auth: {
-                    user: process.env.EMAIL_USER,
-                    pass: process.env.EMAIL_PASS // Use app password for Gmail
-                }
+                host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: Number(process.env.SMTP_PORT || 465),   // 465 = SSL
+      secure: (process.env.SMTP_SECURE ?? 'true') === 'true',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS, // Gmail App Password
+      },
             });
         }
 
