@@ -36,13 +36,9 @@
     class EmailService {
         constructor() {
             this.transporter = nodemailer.createTransport({
-                host: 'smtp.gmail.com',
-                port: 587,
-                secure: false,
-                requireTLS: true,
+                service: 'gmail',
                 auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
-                connectionTimeout: 10000,
-                greetingTimeout: 10000,
+              
             });
         }
 
@@ -50,12 +46,13 @@
         generateOrderConfirmationHTML(orderData) {
             const { order, user, cartItems } = orderData;
             
-            // Calculate items list HTML with quantity, size, unit price, and line total
+            // Calculate items list HTML with quantity, size, color, unit price, and line total
             const itemsHTML = cartItems.map(item => `
                 <tr style="border-bottom: 1px solid #eee;">
                     <td style="padding: 10px; text-align: left;">
                         ${item.product.title}
                         ${item.size ? `<br><small style="color: #7f8c8d;">Големина: ${item.size}</small>` : ''}
+                        ${item.color ? `<br><small style="color: #7f8c8d;">Боја: ${item.color}</small>` : ''}
                     </td>
                     <td style="padding: 10px; text-align: center;">${item.quantity}</td>
                     <td style="padding: 10px; text-align: center;">${formatMKD(item.unitPrice)}</td>
@@ -151,6 +148,112 @@
             `;
         }
 
+        // Generate shop owner notification email HTML template
+        generateOwnerNotificationHTML(orderData) {
+            const { order, user, cartItems } = orderData;
+            
+            // Calculate items list HTML with quantity, size, color, unit price, and line total
+            const itemsHTML = cartItems.map(item => `
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 10px; text-align: left;">
+                        ${item.product.title}
+                        ${item.size ? `<br><small style="color: #7f8c8d;">Големина: ${item.size}</small>` : ''}
+                        ${item.color ? `<br><small style="color: #7f8c8d;">Боја: ${item.color}</small>` : ''}
+                    </td>
+                    <td style="padding: 10px; text-align: center;">${item.quantity}</td>
+                    <td style="padding: 10px; text-align: center;">${formatMKD(item.unitPrice)}</td>
+                    <td style="padding: 10px; text-align: center;"><strong>${formatMKD(item.lineTotal)}</strong></td>
+                </tr>
+            `).join('');
+
+            return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Нова нарачка - MikiKids</title>
+            </head>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background-color: #f8f9fa; padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+                    <h1 style="color: #2c3e50; text-align: center; margin-bottom: 10px;">Нова нарачка пристигна!</h1>
+                    <p style="text-align: center; font-size: 18px; color: #7f8c8d; margin: 0;">Нарачка #${order._id.toString().slice(-8).toUpperCase()}</p>
+                </div>
+
+                <div style="background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                    <h2 style="color: #2c3e50; border-bottom: 2px solid #333333; padding-bottom: 10px;">Детали за нарачката</h2>
+                    
+                    <div style="margin-bottom: 20px;">
+                        <p><strong>Купувач:</strong> ${order.isGuestOrder ? order.guestInfo.name : user.name}</p>
+                        <p><strong>Е-пошта:</strong> ${order.isGuestOrder ? order.guestInfo.email : user.email}</p>
+                        <p><strong>Датум на нарачка:</strong> ${new Date(order.createdAt).toLocaleDateString('mk-MK', { 
+                            year: 'numeric', 
+                            month: 'long', 
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        })}</p>
+                        <p><strong>Статус:</strong> <span style="background-color: #555555; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; text-transform: uppercase;">${order.status === 'pending' ? 'во чекање' : order.status === 'processing' ? 'се обработува' : order.status === 'shipped' ? 'испратена' : order.status === 'delivered' ? 'доставена' : order.status === 'cancelled' ? 'откажана' : order.status}</span></p>
+                    </div>
+
+                    ${order.address ? `
+                    <div style="margin-bottom: 20px;">
+                        <h3 style="color: #2c3e50; margin-bottom: 10px;">Адреса за достава</h3>
+                        <p style="background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin: 0;">${order.address}</p>
+                        ${order.phoneNumber ? `<p style="margin-top: 5px;"><strong>Телефон:</strong> ${order.phoneNumber}</p>` : ''}
+                    </div>
+                    ` : ''}
+
+                    <h3 style="color: #2c3e50; margin-bottom: 15px;">Нарачани производи</h3>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                        <thead>
+                            <tr style="background-color: #333333; color: white;">
+                                <th style="padding: 12px; text-align: left; border-radius: 4px 0 0 0;">Производ</th>
+                                <th style="padding: 12px; text-align: center;">Количина</th>
+                                <th style="padding: 12px; text-align: center;">Цена</th>
+                                <th style="padding: 12px; text-align: center; border-radius: 0 4px 0 0;">Вкупно</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHTML}
+                        </tbody>
+                    </table>
+
+                    <div style="text-align: right; margin-top: 20px;">
+                        ${order.newUserDiscount ? `
+                        <div style="margin-bottom: 10px;">
+                            <p style="font-size: 16px; margin: 0;">
+                                <strong>Попуст за нов купувач: 10% ПОПУСТ!</strong>
+                            </p>
+                        </div>
+                        ` : ''}
+                        <h3 style="color: #2c3e50; font-size: 24px; margin: 0;">
+                            Вкупно: <span>${formatMKD(order.totalPrice)}</span>
+                        </h3>
+                    </div>
+                </div>
+
+                <div style="background-color: #ecf0f1; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="color: #2c3e50; margin-bottom: 15px;">Акции потребни</h3>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        <li>Проверете ја достапноста на производите</li>
+                        <li>Подгответе ја нарачката за испраќање</li>
+                        <li>Ажурирајте го статусот на нарачката</li>
+                        <li>Испратете ја нарачката во рок од 1-2 работни дена</li>
+                    </ul>
+                </div>
+
+                <div style="text-align: center; padding: 20px; border-top: 1px solid #bdc3c7; margin-top: 30px;">
+                    <p style="color: #7f8c8d; margin-bottom: 10px;">MikiKids - Систем за управување со нарачки</p>
+                    <p style="color: #7f8c8d; font-size: 14px; margin: 0;">
+                        Ова е автоматска порака од системот за управување со нарачки.
+                    </p>
+                </div>
+            </body>
+            </html>
+            `;
+        }
+
         // Send order confirmation email
         async sendOrderConfirmation(orderData) {
             try {
@@ -161,7 +264,7 @@
                 
 
                 const mailOptions = {
-                    from:  `manojloskikristijan@gmail.com`,
+                    from:  'MikiKids',
                     to: recipientEmail,
                     subject: `Потврда за нарачка - #${order._id.toString().slice(-8).toUpperCase()}`,
                     html: this.generateOrderConfirmationHTML(orderData),
@@ -186,6 +289,52 @@
                 return { success: true, messageId: result.messageId };
             } catch (error) {
                 console.error('Error sending order confirmation email:', error);
+                return { success: false, error: error.message };
+            }
+        }
+
+        // Send shop owner notification email
+        async sendOwnerNotification(orderData) {
+            try {
+                const { order, user } = orderData;
+                const ownerEmail = process.env.EMAIL_OWNER;
+                
+                if (!ownerEmail) {
+                    console.warn('EMAIL_OWNER environment variable not set, skipping owner notification');
+                    return { success: false, error: 'Owner email not configured' };
+                }
+
+                const mailOptions = {
+                    from: 'MikiKids',
+                    to: ownerEmail,
+                    subject: `Нова нарачка - #${order._id.toString().slice(-8).toUpperCase()}`,
+                    html: this.generateOwnerNotificationHTML(orderData),
+                    // Also include a plain text version
+                    text: `
+Нова нарачка пристигна!
+
+Нарачка #${order._id.toString().slice(-8).toUpperCase()}
+Купувач: ${order.isGuestOrder ? order.guestInfo.name : user.name}
+Е-пошта: ${order.isGuestOrder ? order.guestInfo.email : user.email}
+${order.newUserDiscount ? 'Попуст за нов купувач: 10% ПОПУСТ!' : ''}
+Вкупно: ${formatMKD(order.totalPrice)}
+Статус: ${order.status === 'pending' ? 'во чекање' : order.status === 'processing' ? 'се обработува' : order.status === 'shipped' ? 'испратена' : order.status === 'delivered' ? 'доставена' : order.status === 'cancelled' ? 'откажана' : order.status}
+
+Акции потребни:
+- Проверете ја достапноста на производите
+- Подгответе ја нарачката за испраќање
+- Ажурирајте го статусот на нарачката
+- Испратете ја нарачката во рок од 1-2 работни дена
+
+MikiKids - Систем за управување со нарачки
+                    `.trim()
+                };
+
+                const result = await this.transporter.sendMail(mailOptions);
+                console.log('Owner notification email sent successfully:', result.messageId);
+                return { success: true, messageId: result.messageId };
+            } catch (error) {
+                console.error('Error sending owner notification email:', error);
                 return { success: false, error: error.message };
             }
         }

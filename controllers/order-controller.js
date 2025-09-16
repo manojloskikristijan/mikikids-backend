@@ -38,10 +38,11 @@ const createOrder = async (req, res, next) => {
             // Validate inventory availability for all items
             const unavailableItems = [];
             for (const item of cart.items) {
-                if (!item.product.isAvailable(item.size, item.quantity)) {
-                    const available = item.product.getQuantityForSize(item.size);
+                if (!item.product.isAvailable(item.color, item.size, item.quantity)) {
+                    const available = item.product.getQuantityForColorAndSize(item.color, item.size);
                     unavailableItems.push({
                         product: item.product.title,
+                        color: item.color,
                         size: item.size,
                         requested: item.quantity,
                         available
@@ -81,19 +82,26 @@ const createOrder = async (req, res, next) => {
             
             // Reduce inventory for each cart item
             for (const item of cart.items) {
-                const success = item.product.reduceInventory(item.size, item.quantity);
+                const success = item.product.reduceInventory(item.color, item.size, item.quantity);
                 if (!success) {
-                    throw new Error(`Failed to reduce inventory for ${item.product.title} size ${item.size}`);
+                    throw new Error(`Failed to reduce inventory for ${item.product.title} ${item.color} ${item.size}`);
                 }
                 await item.product.save({ session });
             }
             
-            // Extract product IDs
-            const productIds = cart.items.map(item => item.product._id);
+            // Create order items with detailed information
+            const orderItems = cart.items.map(item => ({
+                product: item.product._id,
+                quantity: item.quantity,
+                size: item.size,
+                color: item.color,
+                unitPrice: item.product.getPriceForUser(true), // Always apply discount
+                lineTotal: item.product.getPriceForUser(true) * item.quantity
+            }));
             
             // Create order
             const orderData = {
-                products: productIds, 
+                items: orderItems, 
                 totalPrice, 
                 status, 
                 address, 
@@ -110,11 +118,12 @@ const createOrder = async (req, res, next) => {
             
             const order = await Order.create([orderData], { session });
             
-            // Store cart items for email before clearing (need quantity, size, and product info)
+            // Store cart items for email before clearing (need quantity, size, color, and product info)
             const cartItemsForEmail = cart.items.map(item => ({
                 product: item.product,
                 quantity: item.quantity,
                 size: item.size,
+                color: item.color,
                 unitPrice: item.product.getPriceForUser(true), // Always apply discount as per new logic
                 lineTotal: item.product.getPriceForUser(true) * item.quantity
             }));
@@ -148,15 +157,25 @@ const createOrder = async (req, res, next) => {
                 };
                 
                 emailService.testEmailConnection();
+                
+                // Send confirmation email to customer
                 const emailResult = await emailService.sendOrderConfirmation(emailData);
                 if (emailResult.success) {
                     console.log(`Order confirmation email sent for order ${completeOrder._id}`);
                 } else {
                     console.error(`Failed to send confirmation email for order ${completeOrder._id}:`, emailResult.error);
                 }
+                
+                // Send notification email to shop owner
+                const ownerEmailResult = await emailService.sendOwnerNotification(emailData);
+                if (ownerEmailResult.success) {
+                    console.log(`Owner notification email sent for order ${completeOrder._id}`);
+                } else {
+                    console.error(`Failed to send owner notification email for order ${completeOrder._id}:`, ownerEmailResult.error);
+                }
             } catch (emailError) {
                 // Log email error but don't fail the order creation
-                console.error('Error sending order confirmation email:', emailError.message);
+                console.error('Error sending emails:', emailError.message);
             }
         }
     } catch (err) {
@@ -174,7 +193,7 @@ const getOrders = async (req, res) => {
         
         const orders = await Order.find(filter)
             .populate('user', 'name email')
-            .populate('products', 'title price')
+            .populate('items.product', 'title price image')
             .limit(limit * 1)
             .skip((page - 1) * limit)
             .sort({ createdAt: -1 });
@@ -191,7 +210,7 @@ const getOrderById = async (req, res) => {
     try {
         const order = await Order.findById(req.params.id)
             .populate('user', 'name email phoneNumber')
-            .populate('products', 'title price image');
+            .populate('items.product', 'title price image');
             
         if (!order) return res.status(404).json({ message: "Order not found" });
         res.json(order);
@@ -205,7 +224,7 @@ const getOrdersByUserId = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
         const orders = await Order.find({ user: req.params.userId })
-            .populate('products', 'title price image')
+            .populate('items.product', 'title price image')
             .limit(limit * 1)
             .skip((page - 1) * limit)
             .sort({ createdAt: -1 });
@@ -227,7 +246,7 @@ const updateOrder = async (req, res) => {
         
         const order = await Order.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })
             .populate('user', 'name email')
-            .populate('products', 'title price');
+            .populate('items.product', 'title price image');
             
         if (!order) return res.status(404).json({ message: "Order not found" });
         res.json({ message: "Order updated successfully", order });

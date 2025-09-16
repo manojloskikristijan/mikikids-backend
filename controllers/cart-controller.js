@@ -12,21 +12,21 @@ const getCart = async (req, res) => {
         if (userId) {
             // Authenticated user cart
             cart = await Cart.findOne({ user: userId, isGuestCart: false })
-                .populate('items.product', 'title price discount image inventory');
+                .populate('items.product', 'title price discount image colors');
         } else if (sessionId) {
             // Guest cart
             cart = await Cart.findOne({ sessionId, isGuestCart: true })
-                .populate('items.product', 'title price discount image inventory');
+                .populate('items.product', 'title price discount image colors');
         } else {
             return res.status(400).json({ message: "Either userId or sessionId is required" });
         }
             
         if (!cart) return res.status(404).json({ message: "Cart not found" });
         
-        // Filter out items that are no longer available in the requested size/quantity
+        // Filter out items that are no longer available in the requested color/size/quantity
         const validItems = cart.items.filter(item => {
             const product = item.product;
-            return product && product.isAvailable(item.size, item.quantity);
+            return product && product.isAvailable(item.color, item.size, item.quantity);
         });
         
         // Update cart if items were filtered out
@@ -44,10 +44,10 @@ const getCart = async (req, res) => {
 // Add item to cart (authenticated user or guest)
 const addToCart = async (req, res) => {
     try {
-      const { userId, sessionId, productId, quantity = 1, size } = req.body;
+      const { userId, sessionId, productId, quantity = 1, size, color } = req.body;
   
-      if (!size) {
-        return res.status(400).json({ message: "Size is required" });
+      if (!size || !color) {
+        return res.status(400).json({ message: "Size and color are required" });
       }
       if (!userId && !sessionId) {
         return res.status(400).json({ message: "Either userId or sessionId is required" });
@@ -56,6 +56,15 @@ const addToCart = async (req, res) => {
       // 1) Validate product
       const product = await Product.findById(productId);
       if (!product) return res.status(404).json({ message: "Product not found" });
+      
+      // 2) Validate color exists for this product
+      const colorExists = product.colors.some(c => c.name === color);
+      if (!colorExists) {
+        return res.status(400).json({ 
+          message: `Color "${color}" is not available for this product`,
+          availableColors: product.colors.map(c => c.name)
+        });
+      }
   
       // 2) Locate or create cart
       let cart;
@@ -93,7 +102,7 @@ const addToCart = async (req, res) => {
       const qtyNum = Math.max(1, Number(quantity) || 1);
   
       const existingItemIndex = cart.items.findIndex(
-        (i) => i.product.toString() === productId && i.size === size
+        (i) => i.product.toString() === productId && i.size === size && i.color === color
       );
   
       const requestedQty =
@@ -102,22 +111,22 @@ const addToCart = async (req, res) => {
           : qtyNum;
   
       // 4) Check availability with the requested quantity
-      if (!product.isAvailable(size, requestedQty)) {
-        const availableQuantity = product.getQuantityForSize(size);
+      if (!product.isAvailable(color, size, requestedQty)) {
+        const availableQuantity = product.getQuantityForColorAndSize(color, size);
         return res
           .status(400)
-          .json({ message: `Only ${availableQuantity} items available for size ${size}` });
+          .json({ message: `Only ${availableQuantity} items available for ${color} ${size}` });
       }
   
       if (existingItemIndex > -1) {
         cart.items[existingItemIndex].quantity = requestedQty;
       } else {
-        cart.items.push({ product: product._id, quantity: qtyNum, size });
+        cart.items.push({ product: product._id, quantity: qtyNum, size, color });
       }
   
       // 5) Save & populate
       await cart.save();
-      await cart.populate("items.product", "title price discount image inventory isOnSale");
+      await cart.populate("items.product", "title price discount image colors isOnSale");
   
       return res.json({ message: "Item added to cart", cart });
     } catch (err) {
@@ -129,9 +138,10 @@ const addToCart = async (req, res) => {
 // Update cart item quantity (authenticated user or guest)
 const updateCartItem = async (req, res) => {
     try {
-        const { userId, sessionId, productId, quantity, size } = req.body;
+        const { userId, sessionId, productId, quantity, size, color } = req.body;
         
         if (!userId && !sessionId) return res.status(400).json({ message: "Either userId or sessionId is required" });
+        if (!size || !color) return res.status(400).json({ message: "Size and color are required" });
         
         let cart;
         if (userId) {
@@ -142,8 +152,20 @@ const updateCartItem = async (req, res) => {
         
         if (!cart) return res.status(404).json({ message: "Cart not found" });
         
+        // Validate product and color exist
+        const product = await Product.findById(productId);
+        if (!product) return res.status(404).json({ message: "Product not found" });
+        
+        const colorExists = product.colors.some(c => c.name === color);
+        if (!colorExists) {
+            return res.status(400).json({ 
+                message: `Color "${color}" is not available for this product`,
+                availableColors: product.colors.map(c => c.name)
+            });
+        }
+        
         const itemIndex = cart.items.findIndex(item => 
-            item.product.toString() === productId && item.size === size
+            item.product.toString() === productId && item.size === size && item.color === color
         );
         
         if (itemIndex === -1) {
@@ -155,18 +177,17 @@ const updateCartItem = async (req, res) => {
             cart.items.splice(itemIndex, 1);
         } else {
             // Check availability before updating
-            const product = await Product.findById(productId);
-            if (!product.isAvailable(size, quantity)) {
-                const availableQuantity = product.getQuantityForSize(size);
+            if (!product.isAvailable(color, size, quantity)) {
+                const availableQuantity = product.getQuantityForColorAndSize(color, size);
                 return res.status(400).json({ 
-                    message: `Only ${availableQuantity} items available for size ${size}` 
+                    message: `Only ${availableQuantity} items available for ${color} ${size}` 
                 });
             }
             cart.items[itemIndex].quantity = quantity;
         }
         
         await cart.save();
-        await cart.populate('items.product', 'title price discount image inventory');
+        await cart.populate('items.product', 'title price discount image colors');
         
         res.json({ message: "Cart updated", cart });
     } catch (err) {
@@ -177,9 +198,10 @@ const updateCartItem = async (req, res) => {
 // Remove item from cart (authenticated user or guest)
 const removeFromCart = async (req, res) => {
     try {
-        const { userId, sessionId, productId, size } = req.body;
+        const { userId, sessionId, productId, size, color } = req.body;
         
         if (!userId && !sessionId) return res.status(400).json({ message: "Either userId or sessionId is required" });
+        if (!size || !color) return res.status(400).json({ message: "Size and color are required" });
         
         let cart;
         if (userId) {
@@ -190,12 +212,24 @@ const removeFromCart = async (req, res) => {
         
         if (!cart) return res.status(404).json({ message: "Cart not found" });
         
+        // Validate product and color exist
+        const product = await Product.findById(productId);
+        if (!product) return res.status(404).json({ message: "Product not found" });
+        
+        const colorExists = product.colors.some(c => c.name === color);
+        if (!colorExists) {
+            return res.status(400).json({ 
+                message: `Color "${color}" is not available for this product`,
+                availableColors: product.colors.map(c => c.name)
+            });
+        }
+        
         cart.items = cart.items.filter(item => 
-            !(item.product.toString() === productId && item.size === size)
+            !(item.product.toString() === productId && item.size === size && item.color === color)
         );
         
         await cart.save();
-        await cart.populate('items.product', 'title price discount image inventory');
+        await cart.populate('items.product', 'title price discount image colors');
         
         res.json({ message: "Item removed from cart", cart });
     } catch (err) {

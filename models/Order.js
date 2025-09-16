@@ -1,15 +1,41 @@
 const mongoose = require("mongoose");
 
+const orderItemSchema = new mongoose.Schema({
+    product: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product",
+        required: true,
+    },
+    quantity: {
+        type: Number,
+        required: true,
+        min: 1,
+    },
+    size: {
+        type: String,
+        required: true,
+    },
+    color: {
+        type: String,
+        required: true,
+    },
+    unitPrice: {
+        type: Number,
+        required: true,
+    },
+    lineTotal: {
+        type: Number,
+        required: true,
+    },
+}, { _id: false });
+
 const orderSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: false, // Not required for guest orders
     },
-    products: {
-        type: [mongoose.Schema.Types.ObjectId],
-        ref: "Product",
-    },
+    items: [orderItemSchema], // Changed from products to items with detailed info
     totalPrice: {
         type: Number,
     },

@@ -16,6 +16,10 @@ const cartItemSchema = new mongoose.Schema({
         type: String,
         required: true, // Size is now required for all cart items
     },
+    color: {
+        type: String,
+        required: true, // Color is now required for all cart items
+    },
 });
 
 const cartSchema = new mongoose.Schema({
