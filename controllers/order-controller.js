@@ -193,11 +193,10 @@ const getOrders = async (req, res) => {
         
         const orders = await Order.find(filter)
             .populate('user', 'name email')
-            .populate('items.product', 'title price image')
+            .populate('items.product', 'title price image colors discount')
             .limit(limit * 1)
             .skip((page - 1) * limit)
             .sort({ createdAt: -1 });
-            console.log(orders);
         const total = await Order.countDocuments(filter);
         res.json({ orders, total, page: +page, pages: Math.ceil(total / limit) });
     } catch (err) {
@@ -210,7 +209,7 @@ const getOrderById = async (req, res) => {
     try {
         const order = await Order.findById(req.params.id)
             .populate('user', 'name email phoneNumber')
-            .populate('items.product', 'title price image');
+            .populate('items.product', 'title price image colors discount');
             
         if (!order) return res.status(404).json({ message: "Order not found" });
         res.json(order);
@@ -224,7 +223,7 @@ const getOrdersByUserId = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
         const orders = await Order.find({ user: req.params.userId })
-            .populate('items.product', 'title price image')
+            .populate('items.product', 'title price image colors discount')
             .limit(limit * 1)
             .skip((page - 1) * limit)
             .sort({ createdAt: -1 });
@@ -246,7 +245,7 @@ const updateOrder = async (req, res) => {
         
         const order = await Order.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true })
             .populate('user', 'name email')
-            .populate('items.product', 'title price image');
+            .populate('items.product', 'title price image colors discount');
             
         if (!order) return res.status(404).json({ message: "Order not found" });
         res.json({ message: "Order updated successfully", order });
